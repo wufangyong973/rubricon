@@ -16,6 +16,8 @@ jobs:
         with: {python-version: "${{ matrix.python }}"}
       - run: pip install --require-hashes -r requirements-dev.lock && pip install --no-deps -e .
       - run: make validate test
+      # Gate-v2 doctest: run the public-function examples in attenuation.py
+      - run: python3 -m pytest --doctest-modules src/rubricon/gates/attenuation.py -v
   reproduce:
     # Regenerate every committed artefact and fail if any byte differs.
     runs-on: ubuntu-latest

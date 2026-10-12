@@ -57,6 +57,11 @@ _N = NormalDist()
 
 
 def z_quantile(p: float) -> float:
+    """Standard-normal quantile (inverse CDF) via :class:`statistics.NormalDist`.
+
+    >>> round(z_quantile(0.975), 4)
+    1.96
+    """
     return _N.inv_cdf(p)
 
 
@@ -70,6 +75,11 @@ def eta_from_disagreement(pairwise_disagreement: float) -> float:
 
     Solves ``2 * eta * (1 - eta) = d`` for the root below 0.5. ``d >= 0.5`` means
     raters agree no more than chance would allow under this model; returns 0.5.
+
+    >>> eta_from_disagreement(0.32)
+    0.2
+    >>> eta_from_disagreement(0.6)
+    0.5
     """
     d = pairwise_disagreement
     if d < 0 or d > 1:
@@ -80,7 +90,11 @@ def eta_from_disagreement(pairwise_disagreement: float) -> float:
 
 
 def eta_majority(eta: float, k: int) -> float:
-    """P(the majority of k raters is wrong); even-k ties are broken by a fair coin."""
+    """P(the majority of k raters is wrong); even-k ties are broken by a fair coin.
+
+    >>> round(eta_majority(0.2, 3), 4)
+    0.104
+    """
     if k < 1:
         raise ValueError("k >= 1")
     wrong = 0.0
@@ -94,7 +108,11 @@ def eta_majority(eta: float, k: int) -> float:
 
 
 def attenuation(eta_gold: float) -> float:
-    """Factor by which gold noise shrinks an expected accuracy gap."""
+    """Factor by which gold noise shrinks an expected accuracy gap.
+
+    >>> attenuation(0.1)
+    0.8
+    """
     return 1.0 - 2.0 * eta_gold
 
 
@@ -120,6 +138,12 @@ class PairedGap:
 
     @classmethod
     def from_correctness(cls, a: Sequence[int], b: Sequence[int]) -> "PairedGap":
+        """Build the paired summary from per-item 0/1 correctness of systems A and B.
+
+        >>> pg = PairedGap.from_correctness([1, 1, 0, 1], [1, 0, 0, 1])
+        >>> pg.n, round(pg.gap, 4), round(pg.disagreement, 4)
+        (4, 0.25, 0.25)
+        """
         if len(a) != len(b) or len(a) < 2:
             raise ValueError("need two equal-length sequences with n >= 2")
         d = [x - y for x, y in zip(a, b)]
@@ -131,7 +155,11 @@ class PairedGap:
 
 def mde_observed(n: int, sd: float, alpha_level: float = 0.05, power: float = 0.80,
                  z_star: float | None = None) -> float:
-    """Observed-scale paired MDE; ``z_star`` replaces the two-sided critical value."""
+    """Observed-scale paired MDE; ``z_star`` replaces the two-sided critical value.
+
+    >>> round(mde_observed(100, 0.5), 4)
+    0.1401
+    """
     za = z_star if z_star is not None else z_quantile(1 - alpha_level / 2)
     return (za + z_quantile(power)) * sd / math.sqrt(n)
 
@@ -142,6 +170,12 @@ def mde_observed(n: int, sd: float, alpha_level: float = 0.05, power: float = 0.
 
 
 def check_direction(pg: PairedGap, z_star: float = 2.58) -> Check:
+    """The only BLOCKing gate-v2 check: the paired z of the observed gap must exceed ``z_star``.
+
+    >>> cd = check_direction(PairedGap(n=2000, gap=0.03, sd=0.43, disagreement=0.2))
+    >>> cd.verdict is Verdict.PASS
+    True
+    """
     ok = pg.gap > 0 and pg.z > z_star
     return Check(
         "direction", Verdict.PASS if ok else Verdict.BLOCK, round(pg.z, 3), z_star,
@@ -154,6 +188,13 @@ def check_direction(pg: PairedGap, z_star: float = 2.58) -> Check:
 def attenuation_report(pg: PairedGap, rater_disagreement: float, k_raters: int,
                        requested_effect: float | None = None, z_star: float = 2.58,
                        power: float = 0.80) -> Check:
+    """Convert the observed gap to the true-label scale; WARNs if the requested effect is below MDE.
+
+    >>> rep = attenuation_report(PairedGap(n=2000, gap=0.03, sd=0.43, disagreement=0.2),
+    ...                          rater_disagreement=0.3, k_raters=3, requested_effect=0.01)
+    >>> rep.verdict is Verdict.WARN
+    True
+    """
     eta = eta_from_disagreement(rater_disagreement)
     eta_g = eta_majority(eta, k_raters)
     att = attenuation(eta_g)
@@ -176,7 +217,15 @@ def attenuation_report(pg: PairedGap, rater_disagreement: float, k_raters: int,
 
 def check_contested_consistency(diff_unanimous: Sequence[float], diff_split: Sequence[float],
                                 z_block: float = 2.58, z_warn: float = 1.96) -> Check:
-    """Does the gap reverse between items raters agreed on and items they split on?"""
+    """Does the gap reverse between items raters agreed on and items they split on?
+
+    >>> up = [1] * 60 + [0] * 340
+    >>> down = [-1] * 60 + [0] * 340
+    >>> check_contested_consistency(up, down).verdict is Verdict.BLOCK
+    True
+    >>> check_contested_consistency(up, up).verdict is Verdict.PASS
+    True
+    """
     def mean_se(xs):
         n = len(xs)
         if n < 2:
